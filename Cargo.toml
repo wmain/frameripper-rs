@@ -1,0 +1,15 @@
+[package]
+name = "frame-ripper"
+version = "0.1.0"
+authors = ["Billy Main <wmain@netflix.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytes = "0.4.12"
+futures-preview = { version = "=0.3.0-alpha.17", features = ["async-await", "nightly"] }
+getopts = "0.2.19"
+tokio = "0.2.0-alpha.1"
+tokio-process = "0.3.0-alpha.1"
+image = "0.21.2"
