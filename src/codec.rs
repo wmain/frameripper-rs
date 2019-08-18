@@ -1,12 +1,10 @@
+use crate::pixel::Pixel;
 use bytes::BytesMut;
-use image::{GenericImageView, ImageBuffer, Rgb};
-use tokio::codec::Decoder;
-pub const WIDTH: f64 = 1500.0;
-pub const HEIGHT: f64 = 500.0;
-
-pub type Pixel = Rgb<u8>;
-pub type FrameBuffer = ImageBuffer<Pixel, Vec<u8>>;
+use image::ImageBuffer;
 use std::io;
+use tokio::codec::Decoder;
+
+pub type FrameBuffer = ImageBuffer<Pixel, Vec<u8>>;
 
 pub struct VideoFrameCodec {
   width: u32,
