@@ -1,10 +1,9 @@
 use futures::stream::StreamExt;
 use image::ImageBuffer;
-use std::process::{Command, Stdio};
 use tokio::codec::FramedRead;
-use tokio_process::CommandExt;
+use tokio_process::Command;
 
-use crate::codec::VideoFrameCodec;
+use crate::codec::{FrameBuffer, VideoFrameCodec};
 use crate::ffmpeg::{get_video_dimensions, get_video_duration};
 use crate::pixel::{get_blended_col_average_pixels, get_simple_col_average_pixels, Pixel};
 
@@ -40,68 +39,60 @@ impl<'a> FrameRipper<'a> {
 
   pub async fn rip(&mut self) -> Result<(), Box<dyn std::error::Error>> {
     let duration = get_video_duration(self.input_path)?;
-    let dimensions = &get_video_dimensions(self.input_path)?;
-    let aspect_preserved_width = dimensions.height * 3;
-    let img_dimensions = Dimensions::new(aspect_preserved_width, dimensions.height);
-    let fps_dividend = duration / img_dimensions.width as f64;
-    let average_pixels = self
-      .spawn_ffmpeg_ripper(fps_dividend, &img_dimensions)
+    let duration = f64::floor(duration - 1.0);
+    let video_dimensions = &get_video_dimensions(self.input_path)?;
+    let aspect_preserved_width = video_dimensions.height * 3;
+    let barcode_dimensions = Dimensions::new(aspect_preserved_width, video_dimensions.height);
+    let pixels = self
+      .spawn_ffmpeg_ripper(duration, &video_dimensions, &barcode_dimensions)
       .await?;
-    self.save_barcode(average_pixels, &img_dimensions)?;
+    self.save_barcode(pixels, &barcode_dimensions)?;
     Ok(())
   }
 
   pub async fn spawn_ffmpeg_ripper(
     &self,
-    fps_dividend: f64,
-    dimensions: &Dimensions,
+    duration: f64,
+    video_dimensions: &Dimensions,
+    barcode_dimensions: &Dimensions,
   ) -> Result<Vec<Pixel>, Box<dyn std::error::Error>> {
-    let dividend_str = fps_dividend.to_string();
-    let fps_arg = &format!("fps=1/{}", dividend_str)[..];
-    let total_pixels = dimensions.width * dimensions.height;
-
-    let mut child = Command::new("ffmpeg")
-      .args(&[
-        "-i",
-        self.input_path,
-        "-vf",
-        fps_arg,
-        "-f",
-        "image2pipe",
-        "-pix_fmt",
-        "rgb24",
-        "-vcodec",
-        "rawvideo",
-        "-",
-      ])
-      .stdout(Stdio::piped())
-      .spawn_async()
-      .expect("failed to spawn ffmpeg for ripping");
-    let stdout = child
-      .stdout()
-      .take()
-      .expect("child did not have a handle to stdout");
-    let mut reader = FramedRead::new(
-      stdout,
-      VideoFrameCodec::new(dimensions.width, dimensions.height),
-    );
-
-    tokio::spawn(async {
-      let status = child.await.expect("child process encountered an error");
-
-      println!("child status was: {}", status);
-    });
-
+    let mut ss: f64 = 0.0;
+    let fps_dividend = duration / barcode_dimensions.width as f64;
+    let total_pixels = barcode_dimensions.width * barcode_dimensions.height;
     let mut pixels = Vec::with_capacity((total_pixels) as usize);
 
-    while let Some(frame) = reader.next().await {
-      if pixels.len() < (total_pixels) as usize {
-        let mut average_pixels = match self.is_simple {
-          true => get_simple_col_average_pixels(frame.unwrap(), dimensions),
-          false => get_blended_col_average_pixels(frame.unwrap(), dimensions),
-        };
-        pixels.append(&mut average_pixels);
-      }
+    while ss < duration {
+      let output = Command::new("ffmpeg")
+        .args(&[
+          "-ss",
+          &ss.to_string(),
+          "-i",
+          self.input_path,
+          "-frames:v",
+          "1",
+          "-f",
+          "image2pipe",
+          "-pix_fmt",
+          "rgb24",
+          "-vcodec",
+          "rawvideo",
+          "-an",
+          "-",
+        ])
+        .output();
+
+      let output = output.await?;
+      assert!(output.status.success());
+      let buf_vec = output.stdout;
+      let frame_buffer =
+        FrameBuffer::from_raw(video_dimensions.width, video_dimensions.height, buf_vec).unwrap();
+      let mut average_pixels = match self.is_simple {
+        true => get_simple_col_average_pixels(frame_buffer, video_dimensions),
+        false => get_blended_col_average_pixels(frame_buffer, video_dimensions),
+      };
+      pixels.append(&mut average_pixels);
+
+      ss += fps_dividend;
     }
 
     Ok(pixels)

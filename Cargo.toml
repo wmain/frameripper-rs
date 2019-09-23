@@ -8,10 +8,10 @@ edition = "2018"
 
 [dependencies]
 bytes = "0.4.12"
-futures-preview = { version = "=0.3.0-alpha.17", features = ["async-await", "nightly"] }
+futures-preview = { version = "=0.3.0-alpha.18", features = ["async-await", "nightly"] }
 getopts = "0.2.19"
 tokio = "0.2.0-alpha.1"
-tokio-process = "0.3.0-alpha.1"
+tokio-process = "0.3.0-alpha.2"
 image = "0.21.2"
 itertools = "0.8.0"
 snafu = "0.5.0"
