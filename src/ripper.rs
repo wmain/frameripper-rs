@@ -1,5 +1,6 @@
 use futures::stream::StreamExt;
 use image::ImageBuffer;
+use std::process::Stdio;
 use tokio::codec::FramedRead;
 use tokio_process::Command;
 
@@ -50,49 +51,60 @@ impl<'a> FrameRipper<'a> {
     Ok(())
   }
 
-  pub async fn spawn_ffmpeg_ripper(
+  async fn spawn_ffmpeg_ripper(
     &self,
     duration: f64,
     video_dimensions: &Dimensions,
     barcode_dimensions: &Dimensions,
   ) -> Result<Vec<Pixel>, Box<dyn std::error::Error>> {
-    let mut ss: f64 = 0.0;
     let fps_dividend = duration / barcode_dimensions.width as f64;
-    let total_pixels = barcode_dimensions.width * barcode_dimensions.height;
-    let mut pixels = Vec::with_capacity((total_pixels) as usize);
 
-    while ss < duration {
-      let output = Command::new("ffmpeg")
-        .args(&[
-          "-ss",
-          &ss.to_string(),
-          "-i",
-          self.input_path,
-          "-frames:v",
-          "1",
-          "-f",
-          "image2pipe",
-          "-pix_fmt",
-          "rgb24",
-          "-vcodec",
-          "rawvideo",
-          "-an",
-          "-",
-        ])
-        .output();
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(&[
+      "-i",
+      self.input_path,
+      "-vf",
+      &format!("fps=1/{:?}", fps_dividend),
+      "-f",
+      "image2pipe",
+      "-pix_fmt",
+      "rgb24",
+      "-vcodec",
+      "rawvideo",
+      "-",
+    ]);
+    cmd.stdout(Stdio::piped());
+    let mut child = cmd.spawn().expect("failed to spawn ffmpeg for ripping");
 
-      let output = output.await?;
-      assert!(output.status.success());
-      let buf_vec = output.stdout;
-      let frame_buffer =
-        FrameBuffer::from_raw(video_dimensions.width, video_dimensions.height, buf_vec).unwrap();
+    let stdout = child
+      .stdout()
+      .take()
+      .expect("child did not have a handle to stdout");
+
+    let mut reader = FramedRead::new(
+      stdout,
+      VideoFrameCodec::new(video_dimensions.width, video_dimensions.height),
+    );
+
+    tokio::spawn(async {
+      let status = child.await.expect("child process encountered an error");
+
+      println!("child status was: {}", status);
+    });
+
+    let mut pixels = Vec::with_capacity(WIDTH as usize);
+    while let Some(Ok(bytes_mut_buffer)) = reader.next().await {
+      let frame_buffer = FrameBuffer::from_raw(
+        video_dimensions.width,
+        video_dimensions.height,
+        bytes_mut_buffer.to_vec(),
+      )
+      .expect("Could not read frame into FrameBuffer");
       let mut average_pixels = match self.is_simple {
         true => get_simple_col_average_pixels(frame_buffer, video_dimensions),
         false => get_blended_col_average_pixels(frame_buffer, video_dimensions),
       };
-      pixels.append(&mut average_pixels);
-
-      ss += fps_dividend;
+      pixels.append(average_pixels.as_mut());
     }
 
     Ok(pixels)
