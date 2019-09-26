@@ -1,6 +1,7 @@
 use futures::stream::StreamExt;
 use image::ImageBuffer;
-use indicatif::{ProgressBar, ProgressStyle};
+use snafu::{OptionExt, ResultExt, Snafu};
+use std::io;
 use std::process::Stdio;
 use tokio::codec::FramedRead;
 use tokio_process::Command;
@@ -10,8 +11,21 @@ use crate::ffmpeg::{get_video_dimensions, get_video_duration};
 use crate::pixel::{get_blended_col_average_pixels, get_simple_col_average_pixels, Pixel};
 use crate::progress::RipperBar;
 
-pub const WIDTH: f64 = 1600.0;
-pub const HEIGHT: f64 = 500.0;
+#[derive(Debug, Snafu)]
+pub enum Error {
+  #[snafu(display("Failed to spawn ffmpeg. {}", source))]
+  CommandSpawnError { source: io::Error },
+  #[snafu(display("ffmpeg could not provide a handle to stdout."))]
+  StdoutHandleError,
+  #[snafu(display("ffmepg encountered an error. {}", source))]
+  FfmpegError { source: io::Error },
+  #[snafu(display("Could not create a FrameBuffer from ffmepg byte stream."))]
+  FrameBufferError,
+  #[snafu(display("Barcode failed to save. {}", source))]
+  BarcodeSaveError { source: io::Error },
+}
+
+type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Copy, Clone)]
 pub struct Dimensions {
@@ -58,7 +72,7 @@ impl<'a> FrameRipper<'a> {
     duration: f64,
     video_dimensions: &Dimensions,
     barcode_dimensions: &Dimensions,
-  ) -> Result<Vec<Pixel>, Box<dyn std::error::Error>> {
+  ) -> Result<Vec<Pixel>> {
     let fps_dividend = duration / barcode_dimensions.width as f64;
 
     let mut cmd = Command::new("ffmpeg");
@@ -77,12 +91,9 @@ impl<'a> FrameRipper<'a> {
     ]);
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::null());
-    let mut child = cmd.spawn().expect("failed to spawn ffmpeg for ripping");
+    let mut child = cmd.spawn().context(CommandSpawnError)?;
 
-    let stdout = child
-      .stdout()
-      .take()
-      .expect("child did not have a handle to stdout");
+    let stdout = child.stdout().take().context(StdoutHandleError)?;
 
     let mut reader = FramedRead::new(
       stdout,
@@ -90,7 +101,8 @@ impl<'a> FrameRipper<'a> {
     );
 
     tokio::spawn(async {
-      let status = child.await.expect("child process encountered an error");
+      // TODO: How to make snafu errors work inside of a tokio executor with FfmepgError?
+      let status = child.await.expect("Child process encountered an error.");
 
       println!("child status was: {}", status);
     });
@@ -104,7 +116,7 @@ impl<'a> FrameRipper<'a> {
         video_dimensions.height,
         bytes_mut_buffer.to_vec(),
       )
-      .expect("Could not read frame into FrameBuffer");
+      .context(FrameBufferError)?;
       let mut average_pixels = match self.is_simple {
         true => get_simple_col_average_pixels(frame_buffer, video_dimensions),
         false => get_blended_col_average_pixels(frame_buffer, video_dimensions),
@@ -124,7 +136,7 @@ impl<'a> FrameRipper<'a> {
     let img = ImageBuffer::from_fn(dimensions.width, dimensions.height as u32, |row, col| {
       average_pixels[(row * dimensions.height as u32 + col) as usize]
     });
-    img.save(self.output_path)?;
+    img.save(self.output_path).context(BarcodeSaveError)?;
     Ok(())
   }
 }

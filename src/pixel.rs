@@ -1,8 +1,9 @@
+use image::Rgb;
+#[allow(unused_imports)]
 use itertools::Itertools;
 
 use crate::codec::FrameBuffer;
 use crate::ripper::Dimensions;
-use image::Rgb;
 
 pub type Pixel = Rgb<u8>;
 
