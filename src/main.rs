@@ -8,6 +8,7 @@ mod codec;
 mod config;
 mod ffmpeg;
 mod pixel;
+mod progress;
 mod ripper;
 
 use crate::config::Config;

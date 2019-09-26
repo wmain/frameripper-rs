@@ -1,5 +1,6 @@
 use futures::stream::StreamExt;
 use image::ImageBuffer;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::process::Stdio;
 use tokio::codec::FramedRead;
 use tokio_process::Command;
@@ -7,6 +8,7 @@ use tokio_process::Command;
 use crate::codec::{FrameBuffer, VideoFrameCodec};
 use crate::ffmpeg::{get_video_dimensions, get_video_duration};
 use crate::pixel::{get_blended_col_average_pixels, get_simple_col_average_pixels, Pixel};
+use crate::progress::RipperBar;
 
 pub const WIDTH: f64 = 1600.0;
 pub const HEIGHT: f64 = 500.0;
@@ -74,6 +76,7 @@ impl<'a> FrameRipper<'a> {
       "-",
     ]);
     cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::null());
     let mut child = cmd.spawn().expect("failed to spawn ffmpeg for ripping");
 
     let stdout = child
@@ -92,7 +95,9 @@ impl<'a> FrameRipper<'a> {
       println!("child status was: {}", status);
     });
 
-    let mut pixels = Vec::with_capacity(WIDTH as usize);
+    let mut pixels = Vec::with_capacity(barcode_dimensions.width as usize);
+    let progress_bar = RipperBar::new(self.input_path, video_dimensions);
+    progress_bar.print_prelude();
     while let Some(Ok(bytes_mut_buffer)) = reader.next().await {
       let frame_buffer = FrameBuffer::from_raw(
         video_dimensions.width,
@@ -105,6 +110,7 @@ impl<'a> FrameRipper<'a> {
         false => get_blended_col_average_pixels(frame_buffer, video_dimensions),
       };
       pixels.append(average_pixels.as_mut());
+      progress_bar.bar.inc(1);
     }
 
     Ok(pixels)
