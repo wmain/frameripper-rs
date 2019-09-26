@@ -1,40 +1,32 @@
 #![feature(async_await)]
 extern crate getopts;
 
-use frame_ripper::FrameRipper;
-use getopts::Options;
 use std::env;
 use std::process;
+
+mod codec;
+mod config;
+mod ffmpeg;
+mod pixel;
+mod progress;
+mod ripper;
+
+use crate::config::Config;
+use crate::ripper::FrameRipper;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    let mut opts = Options::new();
+    let config = Config::new(args).unwrap_or_else(|err| {
+        eprintln!("{}", err);
+        process::exit(1);
+    });
 
-    opts.reqopt("i", "input_path", "The input video file", "");
-    opts.reqopt("o", "output_path", "The output image path", "");
-    let matches = match opts.parse(&args[1..]) {
-        Ok(m) => m,
-        Err(f) => panic!(f.to_string()),
-    };
-
-    let output = match matches.opt_str("o") {
-        Some(o) => o,
-        None => {
-            eprintln!("Required output option not provided");
-            process::exit(1);
-        }
-    };
-
-    let input = match matches.opt_str("i") {
-        Some(i) => i,
-        None => {
-            eprintln!("Required input option not provided");
-            process::exit(1);
-        }
-    };
-
-    let mut ripper = FrameRipper::new(&input, &output);
+    let mut ripper = FrameRipper::new(
+        &config.input_file_path,
+        &config.output_file_path,
+        config.is_simple,
+    );
     ripper.rip().await?;
     Ok(())
 }
