@@ -1,13 +1,7 @@
-use getopts::{Fail, Options};
-use snafu::{ResultExt, Snafu};
+use getopts::Options;
+use snafu::ResultExt;
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-  #[snafu(display("Arguments parsing failed. {:?}", source))]
-  ParseFailureError { source: Fail },
-}
-
-type Result<T, E = Error> = std::result::Result<T, E>;
+use crate::error::*;
 
 pub struct Config {
   pub input_file_path: String,

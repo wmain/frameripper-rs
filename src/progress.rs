@@ -26,13 +26,13 @@ impl<'a> RipperBar<'a> {
 
   // TODO: Implement Display for Dimensions
   pub fn print_prelude(&self) {
-    let ripping = style("Ripping").bold();
+    let ripping = style("Building barcode for").bold();
     let meta = format!(
       "{} ({:?}x{:?})",
       self.input_path, self.dimensions.width, self.dimensions.height
     );
     let styled_meta = style(meta).bold().red();
-    let full_line = format!("{}{}", ripping, styled_meta);
+    let full_line = format!("{} {}", ripping, styled_meta);
 
     eprintln!("{}", full_line);
   }

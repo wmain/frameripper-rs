@@ -1,22 +1,9 @@
-use crate::ripper::Dimensions;
-use snafu::{ResultExt, Snafu};
-use std::io;
+use snafu::ResultExt;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-  #[snafu(display("Failed to spawn ffmpeg. {}", source))]
-  CommandSpawnError { source: io::Error },
-  #[snafu(display("Failed to read line from ffmpeg stdout. {}", source))]
-  FFMPEGLineReadError { source: io::Error },
-  #[snafu(display("Could not parse video duration. {}", source))]
-  ParseDurationError { source: std::num::ParseFloatError },
-  #[snafu(display("Could not parse video dimensions. {}", source))]
-  ParseDimensionsError { source: std::num::ParseIntError },
-}
-
-type Result<T, E = Error> = std::result::Result<T, E>;
+use crate::error::*;
+use crate::ripper::Dimensions;
 
 pub fn get_video_duration(input_video_path: &str) -> Result<f64> {
   let mut cmd = Command::new("ffprobe")
