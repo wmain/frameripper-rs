@@ -1,31 +1,16 @@
+use console::style;
 use futures::stream::StreamExt;
 use image::ImageBuffer;
-use snafu::{OptionExt, ResultExt, Snafu};
-use std::io;
+use snafu::{OptionExt, ResultExt};
 use std::process::Stdio;
 use tokio::codec::FramedRead;
 use tokio_process::Command;
 
 use crate::codec::{FrameBuffer, VideoFrameCodec};
+use crate::error::*;
 use crate::ffmpeg::{get_video_dimensions, get_video_duration};
 use crate::pixel::{get_blended_col_average_pixels, get_simple_col_average_pixels, Pixel};
 use crate::progress::RipperBar;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-  #[snafu(display("Failed to spawn ffmpeg. {}", source))]
-  CommandSpawnError { source: io::Error },
-  #[snafu(display("ffmpeg could not provide a handle to stdout."))]
-  StdoutHandleError,
-  #[snafu(display("ffmepg encountered an error. {}", source))]
-  FfmpegError { source: io::Error },
-  #[snafu(display("Could not create a FrameBuffer from ffmepg byte stream."))]
-  FrameBufferError,
-  #[snafu(display("Barcode failed to save. {}", source))]
-  BarcodeSaveError { source: io::Error },
-}
-
-type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Copy, Clone)]
 pub struct Dimensions {
@@ -54,7 +39,7 @@ impl<'a> FrameRipper<'a> {
     }
   }
 
-  pub async fn rip(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+  pub async fn rip(&mut self) -> Result<()> {
     let duration = get_video_duration(self.input_path)?;
     let duration = f64::floor(duration - 1.0);
     let video_dimensions = &get_video_dimensions(self.input_path)?;
@@ -108,7 +93,7 @@ impl<'a> FrameRipper<'a> {
     });
 
     let mut pixels = Vec::with_capacity(barcode_dimensions.width as usize);
-    let progress_bar = RipperBar::new(self.input_path, video_dimensions);
+    let progress_bar = RipperBar::new(self.input_path, barcode_dimensions);
     progress_bar.print_prelude();
     while let Some(Ok(bytes_mut_buffer)) = reader.next().await {
       let frame_buffer = FrameBuffer::from_raw(
@@ -128,15 +113,20 @@ impl<'a> FrameRipper<'a> {
     Ok(pixels)
   }
 
-  fn save_barcode(
-    &self,
-    average_pixels: Vec<Pixel>,
-    dimensions: &Dimensions,
-  ) -> Result<(), Box<dyn std::error::Error>> {
+  fn save_barcode(&self, average_pixels: Vec<Pixel>, dimensions: &Dimensions) -> Result<()> {
     let img = ImageBuffer::from_fn(dimensions.width, dimensions.height as u32, |row, col| {
       average_pixels[(row * dimensions.height as u32 + col) as usize]
     });
     img.save(self.output_path).context(BarcodeSaveError)?;
+
+    let success_msg = format!(
+      "\n{} {}",
+      style("Successfully wrote barcode to ").green(),
+      style(self.output_path).green()
+    );
+
+    eprintln!("{}", success_msg);
+
     Ok(())
   }
 }
