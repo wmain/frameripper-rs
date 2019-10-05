@@ -1,7 +1,4 @@
-use getopts::Options;
-use snafu::ResultExt;
-
-use crate::error::*;
+use clap::{App, Arg};
 
 pub struct Config {
     pub input_file_path: String,
@@ -10,27 +7,39 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(args: Vec<String>) -> Result<Self> {
-        let mut opts = Options::new();
+    pub fn new() -> Self {
+        let matches = App::new("Movie Barcode")
+                        .version("1.0")
+                        .author("William Main <william.c.main@gmail.com>")
+                        .about("Creates movie barcodes from video files")
+                        .arg(Arg::with_name("input_path")
+                            .short("i")
+                            .long("input_path")
+                            .required(true)
+                            .help("Sets the input file")
+                            .takes_value(true))
+                        .arg(Arg::with_name("output_path")
+                            .short("o")
+                            .long("output_path")
+                            .required(true)
+                            .help("Sets the output file")
+                            .takes_value(true))
+                        .arg(Arg::with_name("is_simple")
+                            .short("s")
+                            .long("simple")
+                            .help("Sets barcode mode. Simple creates barcodes where frame columns have one color averaged from the frame"))
+                        .get_matches();
 
-        opts.reqopt("i", "input_path", "The input video file", "");
-        opts.reqopt("o", "output_path", "The output image path", "");
-        opts.optflag(
-            "s",
-            "simple",
-            "Average the entire frame color palette, rather than average by frame row.",
-        );
+        let input_file_path = matches.value_of("input_path").unwrap().to_owned();
 
-        let matches = opts.parse(&args[1..]).context(ParseFailureError)?;
+        let output_file_path = matches.value_of("output_path").unwrap().to_owned();
 
-        let output = matches.opt_str("o").unwrap();
-        let input = matches.opt_str("i").unwrap();
-        let is_simple = matches.opt_present("s");
+        let is_simple = matches.is_present("is_simple");
 
-        Ok(Self {
+        Self {
+            input_file_path,
             is_simple,
-            input_file_path: input,
-            output_file_path: output,
-        })
+            output_file_path,
+        }
     }
 }

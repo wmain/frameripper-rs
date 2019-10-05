@@ -1,7 +1,5 @@
 #![feature(async_await)]
-extern crate getopts;
 
-use std::env;
 use std::process;
 
 mod codec;
@@ -17,11 +15,7 @@ use crate::ripper::FrameRipper;
 
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = env::args().collect();
-    let config = Config::new(args).unwrap_or_else(|err| {
-        eprintln!("{}", err);
-        process::exit(1);
-    });
+    let config = Config::new();
 
     let mut ripper = FrameRipper::new(
         &config.input_file_path,
